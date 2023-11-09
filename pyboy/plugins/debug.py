@@ -332,19 +332,20 @@ class Debug(PyBoyWindowPlugin):
                 # Remove current breakpoint
 
                 # TODO: Share this code with breakpoint_reached
-                for i, (bank, pc) in enumerate(self.mb.breakpoints_list):
-                    if self.mb.cpu.PC == pc and (
-                        (pc < 0x4000 and bank == 0 and not self.mb.bootrom_enabled) or \
-                        (0x4000 <= pc < 0x8000 and self.mb.cartridge.rombank_selected == bank) or \
-                        (0xA000 <= pc < 0xC000 and self.mb.cartridge.rambank_selected == bank) or \
-                        (pc < 0x100 and bank == -1 and self.mb.bootrom_enabled)
-                    ):
-                        break
-                else:
-                    print("Breakpoint couldn't be deleted for current PC. Not Found.")
-                    continue
-                print(f"Removing breakpoint: {bank}:{pc}")
-                self.mb.remove_breakpoint(i)
+                # for i, (bank, pc) in enumerate(self.mb.breakpoints_list):
+                #     if self.mb.cpu.PC == pc and (
+                #         (pc < 0x4000 and bank == 0 and not self.mb.bootrom_enabled) or \
+                #         (0x4000 <= pc < 0x8000 and self.mb.cartridge.rombank_selected == bank) or \
+                #         (0xA000 <= pc < 0xC000 and self.mb.cartridge.rambank_selected == bank) or \
+                #         (pc < 0x100 and bank == -1 and self.mb.bootrom_enabled)
+                #     ):
+                #         break
+                # else:
+                #     print("Breakpoint couldn't be deleted for current PC. Not Found.")
+                #     continue
+                # print(f"Removing breakpoint: {bank}:{pc}")
+                # self.mb.remove_breakpoint(i)
+                pass
             elif cmd == "pdb":
                 # Start pdb
                 import pdb

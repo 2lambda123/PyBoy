@@ -46,9 +46,8 @@ cdef class Motherboard:
     cdef bint double_speed
     cdef public bint cgb
 
-    cdef bint breakpoints_enabled
     cdef list breakpoints_list
-    cdef int breakpoint_latch
+    cdef bint breakpoint_singlestep
 
     cdef inline bint processing_frame(self) noexcept nogil
 
@@ -58,9 +57,6 @@ cdef class Motherboard:
     cdef bint tick(self) noexcept nogil
 
     cdef void switch_speed(self) noexcept nogil
-
-    @cython.locals(pc=cython.int, bank=cython.int)
-    cdef bint breakpoint_reached(self) noexcept with gil
 
     cdef uint8_t getitem(self, uint16_t) noexcept nogil
     cdef void setitem(self, uint16_t, uint8_t) noexcept nogil

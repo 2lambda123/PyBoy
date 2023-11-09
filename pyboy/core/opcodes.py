@@ -11,6 +11,9 @@ logger = pyboy.logging.get_logger(__name__)
 
 FLAGC, FLAGH, FLAGN, FLAGZ = range(4, 8)
 
+def BRK(cpu):
+    cpu.mb.breakpoint_singlestep = True
+    return 0
 
 def NOP_00(cpu): # 00 NOP
     cpu.PC += 1
@@ -2166,7 +2169,7 @@ def JP_CA(cpu, v): # CA JP Z,a16
 
 
 def PREFIX_CB(cpu): # CB PREFIX CB
-    logger.critical("CB cannot be called!")
+    logger.critical('CB cannot be called!')
     cpu.PC += 1
     cpu.PC &= 0xFFFF
     return 4
@@ -5684,7 +5687,7 @@ def execute_opcode(cpu, opcode):
     elif opcode == 0xDA:
         return JP_DA(cpu, v)
     elif opcode == 0xDB:
-        return no_opcode(cpu)
+        return BRK(cpu)
     elif opcode == 0xDC:
         return CALL_DC(cpu, v)
     elif opcode == 0xDD:
@@ -6285,7 +6288,7 @@ OPCODE_LENGTHS = array.array("B", [
     1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
     1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
     1, 1, 3, 3, 3, 1, 2, 1, 1, 1, 3, 1, 3, 3, 2, 1,
-    1, 1, 3, 0, 3, 1, 2, 1, 1, 1, 3, 0, 3, 0, 2, 1,
+    1, 1, 3, 0, 3, 1, 2, 1, 1, 1, 3, 1, 3, 0, 2, 1,
     2, 1, 1, 0, 0, 1, 2, 1, 2, 1, 3, 0, 0, 0, 2, 1,
     2, 1, 1, 1, 0, 1, 2, 1, 2, 1, 3, 1, 0, 0, 2, 1,
     1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
@@ -6527,7 +6530,7 @@ CPU_COMMANDS = [
     "RET C",
     "RETI",
     "JP C,a16",
-    "",
+    "Breakpoint/Illegal opcode",
     "CALL C,a16",
     "",
     "SBC A,d8",

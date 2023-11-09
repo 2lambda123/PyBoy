@@ -4,12 +4,12 @@
 #
 
 from pyboy import utils
-from pyboy.core.opcodes import CPU_COMMANDS
 from pyboy.utils import STATE_VERSION
 
 from . import bootrom, cartridge, cpu, interaction, lcd, ram, sound, timer
 
 INTR_VBLANK, INTR_LCDC, INTR_TIMER, INTR_SERIAL, INTR_HIGHTOLOW = [1 << x for x in range(5)]
+OPCODE_BRK = 0xDB
 
 import pyboy
 
@@ -78,9 +78,8 @@ class Motherboard:
         self.serialbuffer = [0] * 1024
         self.serialbuffer_count = 0
 
-        self.breakpoints_enabled = False # breakpoints_enabled
         self.breakpoints_list = [] #[(0, 0x150), (0, 0x0040), (0, 0x0048), (0, 0x0050)]
-        self.breakpoint_latch = 0
+        self.breakpoint_singlestep = False
 
     def switch_speed(self):
         bit0 = self.key1 & 0b1
@@ -90,13 +89,56 @@ class Motherboard:
             self.key1 ^= 0b10000001
 
     def add_breakpoint(self, bank, addr):
-        self.breakpoints_enabled = True
-        self.breakpoints_list.append((bank, addr))
+        # Replace instruction at address with OPCODE_BRK and save original opcode
+        # for later reinsertion and when breakpoint is deleted.
+        if addr < 0x100 and bank == -1:
+            opcode = self.bootrom.bootrom[addr]
+            self.bootrom.bootrom[addr] = OPCODE_BRK
+        elif addr < 0x4000:
+            opcode = self.cartridge.rombanks[bank, addr]
+            self.cartridge.rombanks[bank, addr] = OPCODE_BRK
+        elif 0x4000 <= addr < 0x8000:
+            opcode = self.cartridge.rombanks[bank, addr - 0x4000]
+            self.cartridge.rombanks[bank, addr - 0x4000] = OPCODE_BRK
+        elif 0x8000 <= addr < 0xA000:
+            if bank == 0:
+                opcode = self.lcd.VRAM0[addr - 0x8000]
+                self.lcd.VRAM0[addr - 0x8000] = OPCODE_BRK
+            else:
+                opcode = self.lcd.VRAM1[addr - 0x8000]
+                self.lcd.VRAM1[addr - 0x8000] = OPCODE_BRK
+        elif 0xA000 <= addr < 0xC000:
+            opcode = self.cartridge.rambanks[bank, addr - 0xA000]
+            self.cartridge.rambanks[bank, addr - 0xA000] = OPCODE_BRK
+        elif 0xC000 <= addr <= 0xE000:
+            opcode = self.ram.internal_ram0[addr - 0xC000]
+            self.ram.internal_ram0[addr - 0xC000] = OPCODE_BRK
+        else:
+            raise Exception("Unsupported breakpoint address. If this a mistake, reach out to the developers")
+
+        self.breakpoints_list.append((bank, addr, opcode))
 
     def remove_breakpoint(self, index):
-        self.breakpoints_list.pop(index)
-        if self.breakpoints == []:
-            self.breakpoints_enabled = False
+        bank, addr, opcode = self.breakpoints_list.pop(index)
+
+        # Restore opcode
+        if addr < 0x100 and bank == -1:
+            self.bootrom.bootrom[addr] = opcode
+        elif addr < 0x4000:
+            self.cartridge.rombanks[bank, addr] = opcode
+        elif 0x4000 <= addr < 0x8000:
+            self.cartridge.rombanks[bank, addr - 0x4000] = opcode
+        elif 0x8000 <= addr < 0xA000:
+            if bank == 0:
+                self.lcd.VRAM0[addr - 0x8000] = opcode
+            else:
+                self.lcd.VRAM1[addr - 0x8000] = opcode
+        elif 0xA000 <= addr < 0xC000:
+            self.cartridge.rambanks[bank, addr - 0xA000] = opcode
+        elif 0xC000 <= addr <= 0xE000:
+            self.ram.internal_ram0[addr - 0xC000] = opcode
+        else:
+            raise Exception("Unsupported breakpoint address. If this a mistake, reach out to the developers")
 
     def getserial(self):
         b = "".join([chr(x) for x in self.serialbuffer[:self.serialbuffer_count]])
@@ -174,23 +216,6 @@ class Motherboard:
     # Coordinator
     #
 
-    def breakpoint_reached(self):
-        if self.breakpoint_latch > 0:
-            self.breakpoint_latch -= 1
-            return True
-
-        for bank, pc in self.breakpoints_list:
-            if self.cpu.PC == pc and (
-                (pc < 0x4000 and bank == 0 and not self.bootrom_enabled) or \
-                (0x4000 <= pc < 0x8000 and self.cartridge.rombank_selected == bank) or \
-                (0xA000 <= pc < 0xC000 and self.cartridge.rambank_selected == bank) or \
-                (0xC000 <= pc <= 0xFFFF and bank == -1) or \
-                (pc < 0x100 and bank == -1 and self.bootrom_enabled)
-            ):
-                # Breakpoint hit
-                return True
-        return False
-
     def processing_frame(self):
         b = (not self.lcd.frame_done)
         self.lcd.frame_done = False # Clear vblank flag for next iteration
@@ -240,11 +265,7 @@ class Motherboard:
             if lcd_interrupt:
                 self.cpu.set_interruptflag(lcd_interrupt)
 
-            # Escape halt. This happens when pressing 'return' in the debugger. It will make us skip breaking on halt
-            # for every cycle, but do break on the next instruction -- even in an interrupt.
-            escape_halt = self.cpu.halted and self.breakpoint_latch == 1
-            # TODO: Replace with GDB Stub
-            if self.breakpoints_enabled and (not escape_halt) and self.breakpoint_reached():
+            if self.breakpoint_singlestep:
                 return True
 
         # TODO: Move SDL2 sync to plugin

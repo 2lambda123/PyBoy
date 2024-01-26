@@ -80,6 +80,7 @@ class Motherboard:
 
         self.breakpoints_list = [] #[(0, 0x150), (0, 0x0040), (0, 0x0048), (0, 0x0050)]
         self.breakpoint_singlestep = False
+        self.breakpoint_waiting = -1
 
     def switch_speed(self):
         bit0 = self.key1 & 0b1
@@ -88,16 +89,20 @@ class Motherboard:
             self.lcd.double_speed = self.double_speed
             self.key1 ^= 0b10000001
 
-    def add_breakpoint(self, bank, addr):
+    def breakpoint_add(self, bank, addr):
         # Replace instruction at address with OPCODE_BRK and save original opcode
         # for later reinsertion and when breakpoint is deleted.
         if addr < 0x100 and bank == -1:
             opcode = self.bootrom.bootrom[addr]
             self.bootrom.bootrom[addr] = OPCODE_BRK
         elif addr < 0x4000:
+            if self.cartridge.external_rom_count < bank:
+                raise Exception(f"ROM bank out of bounds. Asked for {bank}, max is {self.cartridge.external_rom_count}")
             opcode = self.cartridge.rombanks[bank, addr]
             self.cartridge.rombanks[bank, addr] = OPCODE_BRK
         elif 0x4000 <= addr < 0x8000:
+            if self.cartridge.external_rom_count < bank:
+                raise Exception(f"ROM bank out of bounds. Asked for {bank}, max is {self.cartridge.external_rom_count}")
             opcode = self.cartridge.rombanks[bank, addr - 0x4000]
             self.cartridge.rombanks[bank, addr - 0x4000] = OPCODE_BRK
         elif 0x8000 <= addr < 0xA000:
@@ -108,6 +113,8 @@ class Motherboard:
                 opcode = self.lcd.VRAM1[addr - 0x8000]
                 self.lcd.VRAM1[addr - 0x8000] = OPCODE_BRK
         elif 0xA000 <= addr < 0xC000:
+            if self.cartridge.external_ram_count < bank:
+                raise Exception(f"RAM bank out of bounds. Asked for {bank}, max is {self.cartridge.external_ram_count}")
             opcode = self.cartridge.rambanks[bank, addr - 0xA000]
             self.cartridge.rambanks[bank, addr - 0xA000] = OPCODE_BRK
         elif 0xC000 <= addr <= 0xE000:
@@ -118,8 +125,12 @@ class Motherboard:
 
         self.breakpoints_list.append((bank, addr, opcode))
 
-    def remove_breakpoint(self, index):
+    def breakpoint_remove(self, index):
+        logger.debug(f"Breakpoint remove: {index}")
+        if index > len(self.breakpoints_list):
+            raise Exception(f"Cannot remove breakpoint: Index out of bounds ({index}/{len(self.breakpoints_list)})")
         bank, addr, opcode = self.breakpoints_list.pop(index)
+        logger.debug(f"Breakpoint remove: {bank:02x}:{addr:04x} {opcode:02x}")
 
         # Restore opcode
         if addr < 0x100 and bank == -1:
@@ -139,6 +150,34 @@ class Motherboard:
             self.ram.internal_ram0[addr - 0xC000] = opcode
         else:
             raise Exception("Unsupported breakpoint address. If this a mistake, reach out to the developers")
+        return (bank, addr, opcode)
+
+    def breakpoint_reached(self):
+        for i, (bank, pc, _) in enumerate(self.breakpoints_list):
+            if self.cpu.PC == pc and (
+                (pc < 0x4000 and bank == 0 and not self.bootrom_enabled) or \
+                (0x4000 <= pc < 0x8000 and self.cartridge.rombank_selected == bank) or \
+                (0xA000 <= pc < 0xC000 and self.cartridge.rambank_selected == bank) or \
+                (0xC000 <= pc <= 0xFFFF and bank == -1) or \
+                (pc < 0x100 and bank == -1 and self.bootrom_enabled)
+            ):
+                # Breakpoint hit
+                bank, addr, opcode = self.breakpoint_remove(i)
+                logger.debug(f"Breakpoint reached: {bank:02x}:{addr:04x} {opcode:02x}")
+                self.breakpoint_waiting = (bank & 0xFF) << 24 | (addr & 0xFFFF) << 8 | (opcode & 0xFF)
+                logger.debug(f"Breakpoint waiting: {self.breakpoint_waiting:08x}")
+                return
+        logger.error("Invalid breakpoint reached!", self.cpu.PC)
+
+    def breakpoint_reinject(self):
+        bank = (self.breakpoint_waiting >> 24) & 0xFF
+        # TODO: Improve signedness
+        if bank == 0xFF:
+            bank = -1
+        addr = (self.breakpoint_waiting >> 8) & 0xFFFF
+        logger.debug(f"Breakpoint reinjecting: {bank:02x}:{addr:04x}")
+        self.breakpoint_add(bank, addr)
+        self.breakpoint_waiting = -1
 
     def getserial(self):
         b = "".join([chr(x) for x in self.serialbuffer[:self.serialbuffer_count]])
@@ -266,12 +305,19 @@ class Motherboard:
                 self.cpu.set_interruptflag(lcd_interrupt)
 
             if self.breakpoint_singlestep:
-                return True
+                if cycles == 0:
+                    # NOTE: PC has not been incremented!
+                    self.breakpoint_reached()
+                else:
+                    if self.breakpoint_waiting > 0:
+                        # NOTE: Reinject breakpoint that we have now stepped passed
+                        self.breakpoint_reinject()
+                break
 
         # TODO: Move SDL2 sync to plugin
         self.sound.sync()
 
-        return False
+        return self.breakpoint_singlestep
 
     ###################################################################
     # MemoryManager

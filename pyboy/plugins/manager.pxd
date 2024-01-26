@@ -5,16 +5,16 @@
 
 cimport cython
 
-from pyboy.logging.logging cimport Logger
+# isort:skip
 from pyboy.plugins.auto_pause cimport AutoPause
-# imports end
-from pyboy.plugins.base_plugin cimport PyBoyPlugin, PyBoyWindowPlugin
+# imports
 from pyboy.plugins.debug cimport Debug
 from pyboy.plugins.disable_input cimport DisableInput
 from pyboy.plugins.game_wrapper_kirby_dream_land cimport GameWrapperKirbyDreamLand
 from pyboy.plugins.game_wrapper_pokemon_gen1 cimport GameWrapperPokemonGen1
 from pyboy.plugins.game_wrapper_super_mario_land cimport GameWrapperSuperMarioLand
 from pyboy.plugins.game_wrapper_tetris cimport GameWrapperTetris
+from pyboy.plugins.gdb_server cimport GdbServer
 from pyboy.plugins.record_replay cimport RecordReplay
 from pyboy.plugins.rewind cimport Rewind
 from pyboy.plugins.screen_recorder cimport ScreenRecorder
@@ -22,7 +22,7 @@ from pyboy.plugins.screenshot_recorder cimport ScreenshotRecorder
 from pyboy.plugins.window_dummy cimport WindowDummy
 from pyboy.plugins.window_headless cimport WindowHeadless
 from pyboy.plugins.window_open_gl cimport WindowOpenGL
-# imports
+# imports end
 from pyboy.plugins.window_sdl2 cimport WindowSDL2
 
 
@@ -44,6 +44,7 @@ cdef class PluginManager:
     cdef public Rewind rewind
     cdef public ScreenRecorder screen_recorder
     cdef public ScreenshotRecorder screenshot_recorder
+    cdef public GdbServer gdb_server
     cdef public GameWrapperSuperMarioLand game_wrapper_super_mario_land
     cdef public GameWrapperTetris game_wrapper_tetris
     cdef public GameWrapperKirbyDreamLand game_wrapper_kirby_dream_land
@@ -59,6 +60,7 @@ cdef class PluginManager:
     cdef bint rewind_enabled
     cdef bint screen_recorder_enabled
     cdef bint screenshot_recorder_enabled
+    cdef bint gdb_server_enabled
     cdef bint game_wrapper_super_mario_land_enabled
     cdef bint game_wrapper_tetris_enabled
     cdef bint game_wrapper_kirby_dream_land_enabled

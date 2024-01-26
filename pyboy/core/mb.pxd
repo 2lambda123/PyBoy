@@ -48,12 +48,17 @@ cdef class Motherboard:
 
     cdef list breakpoints_list
     cdef bint breakpoint_singlestep
+    cdef int64_t breakpoint_waiting
+    cdef int breakpoint_add(self, int64_t, int64_t) except -1 with gil
+    cdef tuple breakpoint_remove(self, int64_t) with gil
+    cdef inline void breakpoint_reached(self) noexcept with gil
+    cdef inline void breakpoint_reinject(self) noexcept nogil
 
     cdef inline bint processing_frame(self) noexcept nogil
 
     cdef void buttonevent(self, WindowEvent) noexcept
     cdef void stop(self, bint) noexcept
-    @cython.locals(cycles=int64_t, escape_halt=cython.int, mode0_cycles=int64_t)
+    @cython.locals(cycles=int64_t, mode0_cycles=int64_t, index=cython.int)
     cdef bint tick(self) noexcept nogil
 
     cdef void switch_speed(self) noexcept nogil

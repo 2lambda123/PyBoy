@@ -134,6 +134,8 @@ class PyBoy:
         t_pre = time.perf_counter_ns()
         if not self.paused:
             if self.mb.tick():
+                # TODO: Do callbacks
+
                 # breakpoint reached
                 self.plugin_manager.handle_breakpoint()
             else:
@@ -488,8 +490,7 @@ class PyBoy:
         """
         if self.initialized:
             unsupported_window_types_enabled = [
-                self.plugin_manager.window_dummy_enabled,
-                self.plugin_manager.window_headless_enabled,
+                self.plugin_manager.window_dummy_enabled, self.plugin_manager.window_headless_enabled,
                 self.plugin_manager.window_open_gl_enabled
             ]
             if any(unsupported_window_types_enabled):

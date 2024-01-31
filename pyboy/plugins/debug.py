@@ -75,13 +75,7 @@ class MarkedTile:
 
 
 class Debug(PyBoyWindowPlugin):
-    argv = [("-d", "--debug", {
-        "action": "store_true",
-        "help": "Enable emulator debugging mode"
-    }), ("--breakpoints", {
-        "type": str,
-        "help": "Add breakpoints on start-up (internal use)"
-    })]
+    argv = [("-d", "--debug", {"action": "store_true", "help": "Enable emulator debugging mode"})]
 
     def __init__(self, pyboy, mb, pyboy_argv):
         super().__init__(pyboy, mb, pyboy_argv)
@@ -90,36 +84,6 @@ class Debug(PyBoyWindowPlugin):
             return
 
         self.cgb = mb.cgb
-
-        self.rom_symbols = {}
-        if pyboy_argv.get("ROM"):
-            gamerom_file_no_ext, rom_ext = os.path.splitext(pyboy_argv.get("ROM"))
-            for sym_ext in [".sym", rom_ext + ".sym"]:
-                sym_path = gamerom_file_no_ext + sym_ext
-                if os.path.isfile(sym_path):
-                    with open(sym_path) as f:
-                        for _line in f.readlines():
-                            line = _line.strip()
-                            if line == "":
-                                continue
-                            elif line.startswith(";"):
-                                continue
-                            elif line.startswith("["):
-                                # Start of key group
-                                # [labels]
-                                # [definitions]
-                                continue
-
-                            try:
-                                bank, addr, sym_label = re.split(":| ", line.strip())
-                                bank = int(bank, 16)
-                                addr = int(addr, 16)
-                                if not bank in self.rom_symbols:
-                                    self.rom_symbols[bank] = {}
-
-                                self.rom_symbols[bank][addr] = sym_label
-                            except ValueError as ex:
-                                logger.warning("Skipping .sym line: %s", line.strip())
 
         self.sdl2_event_pump = self.pyboy_argv.get("window_type") != "SDL2"
         if self.sdl2_event_pump:
@@ -218,19 +182,6 @@ class Debug(PyBoyWindowPlugin):
                 pos_y=(256 * self.tile1.scale) + 128
             )
 
-        for _b in (self.pyboy_argv.get("breakpoints") or "").split(","):
-            b = _b.strip()
-            if b == "":
-                continue
-
-            bank_addr = self.parse_bank_addr_sym_label(b)
-            if bank_addr is None:
-                logger.error("Couldn't parse address or label: %s", b)
-                pass
-            else:
-                self.mb.add_breakpoint(*bank_addr)
-                logger.info("Added breakpoint for address or label: %s", b)
-
     def post_tick(self):
         self.tile1.post_tick()
         self.tile2.post_tick()
@@ -267,93 +218,6 @@ class Debug(PyBoyWindowPlugin):
                 return True
         else:
             return False
-
-    def parse_bank_addr_sym_label(self, command):
-        if ":" in command:
-            bank, addr = command.split(":")
-            bank = int(bank, 16)
-            addr = int(addr, 16)
-            return bank, addr
-        else:
-            for bank, addresses in self.rom_symbols.items():
-                for addr, label in addresses.items():
-                    if label == command:
-                        return bank, addr
-        return None
-
-    def handle_breakpoint(self):
-        while True:
-            self.post_tick()
-
-            if self.mb.cpu.PC < 0x4000:
-                bank = 0
-            else:
-                bank = self.mb.cartridge.rombank_selected
-            sym_label = self.rom_symbols.get(bank, {}).get(self.mb.cpu.PC, "")
-
-            print(self.mb.cpu.dump_state(sym_label))
-            cmd = input()
-
-            if cmd == "c" or cmd.startswith("c "):
-                # continue
-                if cmd.startswith("c "):
-                    _, command = cmd.split(" ", 1)
-                    bank_addr = self.parse_bank_addr_sym_label(command)
-                    if bank_addr is None:
-                        print("Couldn't parse address or label!")
-                    else:
-                        # TODO: Possibly add a counter of 1, and remove the breakpoint after hitting it the first time
-                        self.mb.add_breakpoint(*bank_addr)
-                        break
-                else:
-                    break
-            elif cmd == "sl":
-                for bank, addresses in self.rom_symbols.items():
-                    for addr, label in addresses.items():
-                        print(f"{bank:02X}:{addr:04X} {label}")
-            elif cmd == "bl":
-                for bank, addr in self.mb.breakpoints_list:
-                    print(f"{bank:02X}:{addr:04X} {self.rom_symbols.get(bank, {}).get(addr, '')}")
-            elif cmd == "b" or cmd.startswith("b "):
-                if cmd.startswith("b "):
-                    _, command = cmd.split(" ", 1)
-                else:
-                    command = input(
-                        'Write address in the format of "00:0150" or search for a symbol label like "Main"\n'
-                    )
-
-                bank_addr = self.parse_bank_addr_sym_label(command)
-                if bank_addr is None:
-                    print("Couldn't parse address or label!")
-                else:
-                    self.mb.add_breakpoint(*bank_addr)
-
-            elif cmd == "d":
-                # Remove current breakpoint
-
-                # TODO: Share this code with breakpoint_reached
-                for i, (bank, pc) in enumerate(self.mb.breakpoints_list):
-                    if self.mb.cpu.PC == pc and (
-                        (pc < 0x4000 and bank == 0 and not self.mb.bootrom_enabled) or \
-                        (0x4000 <= pc < 0x8000 and self.mb.cartridge.rombank_selected == bank) or \
-                        (0xA000 <= pc < 0xC000 and self.mb.cartridge.rambank_selected == bank) or \
-                        (pc < 0x100 and bank == -1 and self.mb.bootrom_enabled)
-                    ):
-                        break
-                else:
-                    print("Breakpoint couldn't be deleted for current PC. Not Found.")
-                    continue
-                print(f"Removing breakpoint: {bank}:{pc}")
-                self.mb.remove_breakpoint(i)
-            elif cmd == "pdb":
-                # Start pdb
-                import pdb
-                pdb.set_trace()
-                break
-            else:
-                # Step once
-                self.mb.breakpoint_latch = 1
-                self.mb.tick()
 
 
 def make_buffer(w, h):
@@ -419,7 +283,7 @@ class BaseDebugWindow(PyBoyWindowPlugin):
             _y = 7 - y if vflip else y
             for x in range(8):
                 _x = 7 - x if hflip else x
-                to_buffer[yy + y, xx + x] = palette[from_buffer[_y + t*8][_x]]
+                to_buffer[yy + y, xx + x] = palette[from_buffer[_y + t*8, _x]]
 
     def mark_tile(self, x, y, color, height, width, grid):
         tw = width # Tile width
@@ -432,16 +296,16 @@ class BaseDebugWindow(PyBoyWindowPlugin):
             yy = y
         for i in range(th):
             if 0 <= (yy + i) < self.height and 0 <= xx < self.width:
-                self.buf0[yy + i][xx] = color
+                self.buf0[yy + i, xx] = color
         for i in range(tw):
             if 0 <= (yy) < self.height and 0 <= xx + i < self.width:
                 self.buf0[yy, xx + i] = color
         for i in range(tw):
             if 0 <= (yy + th - 1) < self.height and 0 <= xx + i < self.width:
-                self.buf0[yy + th - 1][xx + i] = color
+                self.buf0[yy + th - 1, xx + i] = color
         for i in range(th):
             if 0 <= (yy + i) < self.height and 0 <= xx + tw - 1 < self.width:
-                self.buf0[yy + i][xx + tw - 1] = color
+                self.buf0[yy + i, xx + tw - 1] = color
 
 
 class TileViewWindow(BaseDebugWindow):
@@ -550,12 +414,12 @@ class TileViewWindow(BaseDebugWindow):
                 # Wraps around edges of the screen
                 if y == 0 or y == constants.ROWS - 1: # Draw top/bottom bar
                     for x in range(constants.COLS):
-                        self.buf0[(yy+y) % 0xFF][(xx+x) % 0xFF] = COLOR
+                        self.buf0[(yy+y) % 0xFF, (xx+x) % 0xFF] = COLOR
                 else: # Draw body
-                    self.buf0[(yy+y) % 0xFF][xx % 0xFF] = COLOR
+                    self.buf0[(yy+y) % 0xFF, xx % 0xFF] = COLOR
                     for x in range(constants.COLS):
-                        self.buf0[(yy+y) % 0xFF][(xx+x) % 0xFF] &= self.color
-                    self.buf0[(yy+y) % 0xFF][(xx + constants.COLS) % 0xFF] = COLOR
+                        self.buf0[(yy+y) % 0xFF, (xx+x) % 0xFF] &= self.color
+                    self.buf0[(yy+y) % 0xFF, (xx + constants.COLS) % 0xFF] = COLOR
             else: # Window
                 # Takes a cut of the screen
                 xx = -xx
@@ -566,7 +430,7 @@ class TileViewWindow(BaseDebugWindow):
                             self.buf0[yy + y, xx + x] = COLOR
                 else: # Draw body
                     if 0 <= yy + y:
-                        self.buf0[yy + y][max(xx, 0)] = COLOR
+                        self.buf0[yy + y, max(xx, 0)] = COLOR
                         for x in range(constants.COLS):
                             if 0 <= xx + x < constants.COLS:
                                 self.buf0[yy + y, xx + x] &= self.color
@@ -584,10 +448,10 @@ class TileViewWindow(BaseDebugWindow):
         # Mark current scanline directly from LY,SCX,SCY,WX,WY
         if background_view:
             for x in range(constants.COLS):
-                self.buf0[(self.mb.lcd.SCY + self.mb.lcd.LY) % 0xFF][(self.mb.lcd.SCX + x) % 0xFF] = 0xFF00CE12
+                self.buf0[(self.mb.lcd.SCY + self.mb.lcd.LY) % 0xFF, (self.mb.lcd.SCX + x) % 0xFF] = 0xFF00CE12
         else:
             for x in range(constants.COLS):
-                self.buf0[(self.mb.lcd.WY + self.mb.lcd.LY) % 0xFF][(self.mb.lcd.WX + x) % 0xFF] = 0xFF00CE12
+                self.buf0[(self.mb.lcd.WY + self.mb.lcd.LY) % 0xFF, (self.mb.lcd.WX + x) % 0xFF] = 0xFF00CE12
 
 
 class TileDataWindow(BaseDebugWindow):
@@ -822,49 +686,52 @@ class MemoryWindow(BaseDebugWindow):
 
     def write_border(self):
         for x in range(self.NCOLS):
-            self.text_buffer[0][x] = 0xCD
-            self.text_buffer[2][x] = 0xCD
-            self.text_buffer[self.NROWS - 1][x] = 0xCD
+            self.text_buffer[0, x] = 0xCD
+            self.text_buffer[2, x] = 0xCD
+            self.text_buffer[self.NROWS - 1, x] = 0xCD
 
         for y in range(3, self.NROWS):
-            self.text_buffer[y][0] = 0xBA
-            self.text_buffer[y][9] = 0xB3
-            self.text_buffer[y][self.NCOLS - 1] = 0xBA
+            self.text_buffer[y, 0] = 0xBA
+            self.text_buffer[y, 9] = 0xB3
+            self.text_buffer[y, self.NCOLS - 1] = 0xBA
 
-        self.text_buffer[0][0] = 0xC9
-        self.text_buffer[1][0] = 0xBA
-        self.text_buffer[0][self.NCOLS - 1] = 0xBB
-        self.text_buffer[1][self.NCOLS - 1] = 0xBA
+        self.text_buffer[0, 0] = 0xC9
+        self.text_buffer[1, 0] = 0xBA
+        self.text_buffer[0, self.NCOLS - 1] = 0xBB
+        self.text_buffer[1, self.NCOLS - 1] = 0xBA
 
-        self.text_buffer[2][0] = 0xCC
-        self.text_buffer[2][9] = 0xD1
-        self.text_buffer[2][self.NCOLS - 1] = 0xB9
+        self.text_buffer[2, 0] = 0xCC
+        self.text_buffer[2, 9] = 0xD1
+        self.text_buffer[2, self.NCOLS - 1] = 0xB9
 
-        self.text_buffer[self.NROWS - 1][0] = 0xC8
-        self.text_buffer[self.NROWS - 1][9] = 0xCF
-        self.text_buffer[self.NROWS - 1][self.NCOLS - 1] = 0xBC
+        self.text_buffer[self.NROWS - 1, 0] = 0xC8
+        self.text_buffer[self.NROWS - 1, 9] = 0xCF
+        self.text_buffer[self.NROWS - 1, self.NCOLS - 1] = 0xBC
 
     def write_addresses(self):
         header = (f"Memory from 0x{self.start_address:04X} "
                   f"to 0x{self.start_address+0x3FF:04X}").encode("cp437")
         for x in range(28):
-            self.text_buffer[1][x + 2] = header[x]
+            self.text_buffer[1, x + 2] = header[x]
         for y in range(32):
             addr = f"0x{self.start_address + (0x20*y):04X}".encode("cp437")
             for x in range(6):
-                self.text_buffer[y + 3][x + 2] = addr[x]
+                self.text_buffer[y + 3, x + 2] = addr[x]
 
     def write_memory(self):
         for y in range(32):
             for x in range(16):
                 mem = self.mb.getitem(self.start_address + 16*y + x)
                 a = hex(mem)[2:].zfill(2).encode("cp437")
-                self.text_buffer[y + 3][3*x + 11] = a[0]
-                self.text_buffer[y + 3][3*x + 12] = a[1]
+                self.text_buffer[y + 3, 3*x + 11] = a[0]
+                self.text_buffer[y + 3, 3*x + 12] = a[1]
 
     def render_text(self):
         for y in range(self.NROWS):
-            self.draw_text(0, 16 * y, self.text_buffer[y])
+            text = array("B", [0x0] * (self.NCOLS))
+            for x in range(self.NCOLS):
+                text[x] = self.text_buffer[y, x]
+            self.draw_text(0, 16 * y, text)
 
     def draw_text(self, x, y, text):
         self.dst.x = x

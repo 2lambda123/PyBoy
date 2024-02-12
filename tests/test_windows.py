@@ -6,6 +6,7 @@
 import os
 
 import pytest
+
 from tests.test_replay import replay
 
 from .conftest import BOOTROM_FRAMES_UNTIL_LOGO

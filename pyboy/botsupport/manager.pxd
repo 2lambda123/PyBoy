@@ -3,12 +3,12 @@
 # GitHub: https://github.com/Baekalfen/PyBoy
 #
 cimport cython
-from pyboy.core.mb cimport Motherboard
+
 from pyboy.botsupport.screen cimport Screen
 from pyboy.botsupport.sprite cimport Sprite
 from pyboy.botsupport.tile cimport Tile
 from pyboy.botsupport.tilemap cimport TileMap
-
+from pyboy.core.mb cimport Motherboard
 
 
 cdef class BotSupportManager:

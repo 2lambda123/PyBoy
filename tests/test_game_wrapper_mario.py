@@ -9,6 +9,7 @@ import sys
 
 import numpy as np
 import pytest
+
 from pyboy import PyBoy, WindowEvent
 
 py_version = platform.python_version()[:3]

@@ -11,6 +11,7 @@ import numpy as np
 import PIL
 import pytest
 from PIL import ImageChops
+
 from pyboy import PyBoy, WindowEvent
 from pyboy.botsupport.tile import Tile
 

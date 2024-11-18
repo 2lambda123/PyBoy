@@ -298,7 +298,7 @@ class PaletteRegister:
         return self.value
 
     def getcolor(self, i):
-        if i==0:
+        if i == 0:
             return self.palette_mem_rgb[self.lookup[0]] | COL0_FLAG
         else:
             return self.palette_mem_rgb[self.lookup[i]]
